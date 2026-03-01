@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         S3_BUCKET = "petclinicapp-bucketmy"
-        BUILD_FILE_NAME = "petclinicapp-v1.jar"  // final jar name after build
+        BUILD_FILE_NAME = "petclinicapp-v1.jar"
         LOCAL_FILE_PATH = "/home/petclinicapp/petclinicapp-v1.jar"
         SSH_KEY = "/home/jenkins/petclinicappkey.pem"
     }
@@ -12,7 +12,7 @@ pipeline {
 
         stage('Checkout') {
             steps {
-                echo "Checkout source code from GitHub"
+                echo "Checkout source code"
                 git branch: 'main',
                     url: 'https://github.com/hinakeshar1234/gs-spring-boot.git'
             }
@@ -20,20 +20,18 @@ pipeline {
 
         stage('Build') {
             steps {
-                echo "Build Spring Boot app from initial folder"
+                echo "Build Spring Boot app"
                 sh '''
                 cd initial
                 chmod +x mvnw
                 ./mvnw clean package
-                # Rename the generated JAR to match BUILD_FILE_NAME
-                mv target/*.jar target/$BUILD_FILE_NAME
                 '''
             }
         }
 
         stage('Upload to S3') {
             steps {
-                echo "Upload JAR to S3 bucket"
+                echo "Upload JAR to S3"
                 sh '''
                 aws s3 cp $WORKSPACE/initial/target/$BUILD_FILE_NAME s3://$S3_BUCKET/
                 '''
@@ -58,9 +56,38 @@ pipeline {
 
                     for (ip in ips) {
                         echo "Deploying to ${ip}"
+
                         sh """
-                        ssh -o StrictHostKeyChecking=no -i ${SSH_KEY} ubuntu@${ip} << EOF
-                        sudo aws s3 cp s3://${S3_BUCKET}/${BUILD_FILE_NAME} ${LOCAL_FILE_PATH}
+                        ssh -o StrictHostKeyChecking=no -i ${SSH_KEY} ubuntu@${ip} << 'EOF'
+                        # Ensure target folder exists
+                        mkdir -p /home/petclinicapp
+                        cd /home/petclinicapp
+
+                        # S3 download (uses aws configure credentials on EC2)
+                        aws s3 cp s3://${S3_BUCKET}/${BUILD_FILE_NAME} ${LOCAL_FILE_PATH}
+
+                        # Create systemd service if it doesn't exist
+                        if [ ! -f /etc/systemd/system/petclinicapp.service ]; then
+                            sudo bash -c 'cat > /etc/systemd/system/petclinicapp.service <<EOL
+[Unit]
+Description=Pet Clinic Spring Boot App
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/petclinicapp
+ExecStart=/usr/bin/java -jar /home/petclinicapp/${BUILD_FILE_NAME}
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOL'
+                            sudo systemctl daemon-reload
+                            sudo systemctl enable petclinicapp.service
+                        fi
+
+                        # Restart service
                         sudo systemctl restart petclinicapp.service
                         EOF
                         """
