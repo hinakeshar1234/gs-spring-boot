@@ -1,10 +1,9 @@
-
 pipeline {
     agent any
 
     environment {
         S3_BUCKET = "petclinicapp-bucketmy"
-        BUILD_FILE_NAME = "petclinicapp-v1.jar"
+        BUILD_FILE_NAME = "petclinicapp-v1.jar"  // final jar name after build
         LOCAL_FILE_PATH = "/home/petclinicapp/petclinicapp-v1.jar"
         SSH_KEY = "/home/jenkins/petclinicappkey.pem"
     }
@@ -13,7 +12,7 @@ pipeline {
 
         stage('Checkout') {
             steps {
-                echo "Checkout source code"
+                echo "Checkout source code from GitHub"
                 git branch: 'main',
                     url: 'https://github.com/hinakeshar1234/gs-spring-boot.git'
             }
@@ -26,13 +25,15 @@ pipeline {
                 cd initial
                 chmod +x mvnw
                 ./mvnw clean package
+                # Rename the generated JAR to match BUILD_FILE_NAME
+                mv target/*.jar target/$BUILD_FILE_NAME
                 '''
             }
         }
 
         stage('Upload to S3') {
             steps {
-                echo "Upload JAR to S3"
+                echo "Upload JAR to S3 bucket"
                 sh '''
                 aws s3 cp $WORKSPACE/initial/target/$BUILD_FILE_NAME s3://$S3_BUCKET/
                 '''
@@ -42,7 +43,7 @@ pipeline {
         stage('Deploy to EC2') {
             steps {
                 script {
-                    echo "Fetch running EC2 instances"
+                    echo "Fetching running EC2 instances tagged with appname=petclinic"
 
                     def ips = sh(
                         script: '''
