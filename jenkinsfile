@@ -3,12 +3,19 @@ pipeline {
 
     environment {
         S3_BUCKET = "petclinicapp-bucketmy"
-        BUILD_FILE_NAME = "petclinicapp-v1.jar"
-        LOCAL_FILE_PATH = "/home/petclinicapp/petclinicapp-v1.jar"
+        BUILD_FILE_NAME = "spring-boot-initial-0.0.1-SNAPSHOT.jar"  // updated
+        LOCAL_FILE_PATH = "/home/petclinicapp/spring-boot-initial-0.0.1-SNAPSHOT.jar"
         SSH_KEY = "/home/jenkins/petclinicappkey.pem"
     }
 
     stages {
+
+        stage('Clean Workspace') {
+            steps {
+                echo "Cleaning previous builds"
+                deleteDir()  // workspace clean
+            }
+        }
 
         stage('Checkout') {
             steps {
@@ -20,7 +27,7 @@ pipeline {
 
         stage('Build') {
             steps {
-                echo "Build Spring Boot app"
+                echo "Build Spring Boot app from initial folder"
                 sh '''
                 cd initial
                 chmod +x mvnw
@@ -41,7 +48,7 @@ pipeline {
         stage('Deploy to EC2') {
             steps {
                 script {
-                    echo "Fetching running EC2 instances tagged with appname=petclinic"
+                    echo "Fetch running EC2 instances tagged with appname=petclinic"
 
                     def ips = sh(
                         script: '''
@@ -56,39 +63,19 @@ pipeline {
 
                     for (ip in ips) {
                         echo "Deploying to ${ip}"
-
                         sh """
                         ssh -o StrictHostKeyChecking=no -i ${SSH_KEY} ubuntu@${ip} << 'EOF'
-                        # Ensure target folder exists
                         mkdir -p /home/petclinicapp
-                        cd /home/petclinicapp
-
-                        # S3 download (uses aws configure credentials on EC2)
                         aws s3 cp s3://${S3_BUCKET}/${BUILD_FILE_NAME} ${LOCAL_FILE_PATH}
-
-                        # Create systemd service if it doesn't exist
-                        if [ ! -f /etc/systemd/system/petclinicapp.service ]; then
-                            sudo bash -c 'cat > /etc/systemd/system/petclinicapp.service <<EOL
-[Unit]
-Description=Pet Clinic Spring Boot App
-After=network.target
-
-[Service]
-User=ubuntu
-WorkingDirectory=/home/petclinicapp
-ExecStart=/usr/bin/java -jar /home/petclinicapp/${BUILD_FILE_NAME}
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-EOL'
+                        if systemctl list-units --full -all | grep -q petclinicapp.service; then
+                            sudo systemctl restart petclinicapp.service
+                        else
+                            echo "Service not found, creating a simple one"
+                            echo -e "[Unit]\nDescription=Pet Clinic App\nAfter=network.target\n\n[Service]\nUser=ubuntu\nExecStart=/usr/bin/java -jar ${LOCAL_FILE_PATH}\nSuccessExitStatus=143\n\n[Install]\nWantedBy=multi-user.target" | sudo tee /etc/systemd/system/petclinicapp.service
                             sudo systemctl daemon-reload
                             sudo systemctl enable petclinicapp.service
+                            sudo systemctl start petclinicapp.service
                         fi
-
-                        # Restart service
-                        sudo systemctl restart petclinicapp.service
                         EOF
                         """
                     }
