@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         S3_BUCKET = "petclinicapp-bucketmy"
-        BUILD_FILE_NAME = "spring-boot-initial-0.0.1-SNAPSHOT.jar"
+        BUILD_FILE_NAME = "spring-boot-initial-0.0.1-SNAPSHOT.jar"  // updated
         LOCAL_FILE_PATH = "/home/petclinicapp/spring-boot-initial-0.0.1-SNAPSHOT.jar"
         SSH_KEY = "/home/jenkins/petclinicappkey.pem"
     }
@@ -13,7 +13,7 @@ pipeline {
         stage('Clean Workspace') {
             steps {
                 echo "Cleaning previous builds"
-                deleteDir()
+                deleteDir()  // workspace clean
             }
         }
 
@@ -64,19 +64,19 @@ pipeline {
                     for (ip in ips) {
                         echo "Deploying to ${ip}"
                         sh """
-                        ssh -o StrictHostKeyChecking=no -i ${SSH_KEY} ubuntu@${ip} << 'EOF'
-                        mkdir -p /home/petclinicapp
-                        aws s3 cp s3://${S3_BUCKET}/${BUILD_FILE_NAME} ${LOCAL_FILE_PATH}
-                        if systemctl list-units --full -all | grep -q petclinicapp.service; then
-                            sudo systemctl restart petclinicapp.service
-                        else
-                            echo "Service not found, creating a simple one"
-                            echo -e "[Unit]\\nDescription=Pet Clinic App\\nAfter=network.target\\n\\n[Service]\\nUser=ubuntu\\nExecStart=/usr/bin/java -jar ${LOCAL_FILE_PATH}\\nSuccessExitStatus=143\\n\\n[Install]\\nWantedBy=multi-user.target" | sudo tee /etc/systemd/system/petclinicapp.service
-                            sudo systemctl daemon-reload
-                            sudo systemctl enable petclinicapp.service
-                            sudo systemctl start petclinicapp.service
-                        fi
-                        EOF
+                        ssh -o StrictHostKeyChecking=no -i ${SSH_KEY} ubuntu@${ip} << EOF
+mkdir -p /home/petclinicapp
+aws s3 cp s3://${S3_BUCKET}/${BUILD_FILE_NAME} ${LOCAL_FILE_PATH}
+if systemctl list-units --full -all | grep -q petclinicapp.service; then
+    sudo systemctl restart petclinicapp.service
+else
+    echo "Service not found, creating a simple one"
+    echo -e "[Unit]\\nDescription=Pet Clinic App\\nAfter=network.target\\n\\n[Service]\\nUser=ubuntu\\nExecStart=/usr/bin/java -jar ${LOCAL_FILE_PATH}\\nSuccessExitStatus=143\\n\\n[Install]\\nWantedBy=multi-user.target" | sudo tee /etc/systemd/system/petclinicapp.service
+    sudo systemctl daemon-reload
+    sudo systemctl enable petclinicapp.service
+    sudo systemctl start petclinicapp.service
+fi
+EOF
                         """
                     }
                 }
